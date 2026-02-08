@@ -7,13 +7,13 @@ public class DetectionResult {
     private final float confidence;
     private final RectF location;
 
-    public DetectionResult(String title, float confidence, RectF location) {
+    public DetectionResult(RectF location, float confidence,String title ) {
         this.title = title;
         this.confidence = confidence;
         this.location = location;
     }
 
-    public String getTitle() { return title; }
+    public String getLabel() { return title; }
     public float getConfidence() { return confidence; }
-    public RectF getLocation() { return location; }
+    public RectF getBoundingBox() { return location; }
 }
