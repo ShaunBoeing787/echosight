@@ -29,5 +29,35 @@ public class MainActivity extends AppCompatActivity {
             // This will tell you if labelmap.txt or detect.tflite is missing
             e.printStackTrace();
         }
+        // ===== FINAL SECTOR 2 → 3 PIPELINE TEST =====
+        DetectionResult fake = new DetectionResult(
+                new android.graphics.RectF(100, 100, 400, 800), // big object
+                0.9f,
+                "person"
+        );
+
+        java.util.List<DetectionResult> fakeList =
+                java.util.Collections.singletonList(fake);
+
+        DetectionResult stable =
+                com.example.echosight.logic.DetectionFilter.filter(fakeList);
+
+        if (stable != null) {
+            com.example.echosight.logic.ProximityEstimator.Proximity p =
+                    com.example.echosight.logic.ProximityEstimator.estimateProximity(
+                            stable, 1000
+                    );
+
+            com.example.echosight.logic.DirectionEstimator.Direction d =
+                    com.example.echosight.logic.DirectionEstimator.estimateDirection(
+                            stable, 1000
+                    );
+
+            Log.e(TAG, "🧠 FINAL LOGIC OUTPUT → Proximity: " + p + ", Direction: " + d);
+        } else {
+            Log.e(TAG, "❌ Detection filtered out");
+        }
+// ===== END TEST =====
+
     }
 }

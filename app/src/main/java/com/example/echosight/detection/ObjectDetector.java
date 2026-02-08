@@ -59,10 +59,10 @@ public class ObjectDetector {
                 String label = (classIndex < labels.size()) ? labels.get(classIndex) : "Unknown";
 
                 results.add(new DetectionResult(
-                        label,
-                        outputScores[0][i],
                         new RectF(outputLocations[0][i][1], outputLocations[0][i][0],
-                                outputLocations[0][i][3], outputLocations[0][i][2])
+                                outputLocations[0][i][3], outputLocations[0][i][2]),
+                        outputScores[0][i],
+                        label
                 ));
             }
         }
