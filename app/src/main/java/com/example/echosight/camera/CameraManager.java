@@ -1,6 +1,7 @@
 package com.example.echosight.camera;
 
 import android.content.Context;
+import android.util.Log;
 import android.util.Size;
 
 import androidx.camera.core.CameraSelector;
@@ -18,23 +19,21 @@ public class CameraManager {
     private final Context context;
     private final LifecycleOwner lifecycleOwner;
     private final PreviewView previewView;
+    private ProcessCameraProvider cameraProvider; // Store this to unbind later
 
     public CameraManager(Context context, LifecycleOwner owner, PreviewView previewView) {
         this.context = context;
         this.lifecycleOwner = owner;
         this.previewView = previewView;
     }
-
+    @androidx.camera.core.ExperimentalGetImage
     public void startCamera(FrameAnalyzer analyzer) {
-
-
-
         ListenableFuture<ProcessCameraProvider> future =
                 ProcessCameraProvider.getInstance(context);
 
         future.addListener(() -> {
             try {
-                ProcessCameraProvider cameraProvider = future.get();
+                cameraProvider = future.get(); // Assign to class variable
 
                 Preview preview = new Preview.Builder().build();
                 preview.setSurfaceProvider(previewView.getSurfaceProvider());
@@ -61,10 +60,20 @@ public class CameraManager {
                         analysis
                 );
 
+                Log.d("ECHO_SIGHT", "Camera Bound to Lifecycle");
+
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.e("ECHO_SIGHT", "Camera Start Failed: " + e.getMessage());
             }
 
         }, ContextCompat.getMainExecutor(context));
+    }
+
+    // NEW: The "Off Switch" for your voice command
+    public void stopCamera() {
+        if (cameraProvider != null) {
+            cameraProvider.unbindAll();
+            Log.d("ECHO_SIGHT", "Camera Unbound (Stopped)");
+        }
     }
 }
