@@ -1,36 +1,49 @@
 package com.example.echosight.logic;
 
 import android.graphics.RectF;
+import android.util.Log;
+
 import com.example.echosight.detection.DetectionResult;
+
 import java.util.LinkedList;
 import java.util.List;
 
 public class DetectionFilter {
 
+    private static final String TAG = "ECHO_SIGHT";
+
     private static final int HISTORY_SIZE = 5;
     private static final LinkedList<DetectionResult> history = new LinkedList<>();
 
-    // NEW: Variable to store the smoothed position across frames
+    // Bounding box smoothing
     private static RectF lastSmoothedRect = null;
-    // NEW: Smoothing factor (0.1 = very slow/stable, 0.3 = smooth, 1.0 = raw/shaky)
     private static final float SMOOTHING_FACTOR = 0.25f;
+
+    // 🔒 HARD RULE: Minimum confidence = 60%
+    private static final float MIN_CONFIDENCE = 0.60f;
 
     public static DetectionResult filter(List<DetectionResult> detections) {
 
         if (detections == null || detections.isEmpty()) {
-            lastSmoothedRect = null; // Reset if nothing is seen
+            Log.e(TAG, "NO DETECTIONS IN FRAME");
+            lastSmoothedRect = null;
             return null;
         }
 
-        // 1. Pick largest confident object
+        // 1️⃣ Pick the largest object with ≥ 60% confidence
         DetectionResult best = null;
-        float maxArea = 0;
+        float maxArea = 0f;
 
         for (DetectionResult d : detections) {
-            if (d.getConfidence() < 0.4f) continue;
 
-            RectF b = d.getBoundingBox();
-            float area = Math.abs(b.width() * b.height());
+            if (d == null || d.getBoundingBox() == null) continue;
+
+            if (d.getConfidence() < MIN_CONFIDENCE) {
+                continue;
+            }
+
+            RectF box = d.getBoundingBox();
+            float area = Math.abs(box.width() * box.height());
 
             if (area > maxArea) {
                 maxArea = area;
@@ -38,9 +51,17 @@ public class DetectionFilter {
             }
         }
 
-        if (best == null) return null;
+        if (best == null) {
+            Log.e(TAG, "NO OBJECT ≥ 60% CONFIDENCE");
+            return null;
+        }
 
-        // 2. History Check (for flickering suppression)
+        Log.e(TAG,
+                "FILTER CANDIDATE → " + best.getLabel()
+                        + " | conf=" + String.format("%.2f", best.getConfidence())
+        );
+
+        // 2️⃣ Temporal stability check
         history.add(best);
         if (history.size() > HISTORY_SIZE) history.removeFirst();
 
@@ -49,37 +70,43 @@ public class DetectionFilter {
             if (isSame(best, d)) sameCount++;
         }
 
-        // 3. APPLY TEMPORAL SMOOTHING
-        if (sameCount >= 3) {
-            RectF currentRect = best.getBoundingBox();
-
-            if (lastSmoothedRect == null) {
-                lastSmoothedRect = currentRect;
-            } else {
-                // Exponential Moving Average Math:
-                // NewPos = (Current * Factor) + (Last * (1 - Factor))
-                lastSmoothedRect = new RectF(
-                        (currentRect.left * SMOOTHING_FACTOR) + (lastSmoothedRect.left * (1 - SMOOTHING_FACTOR)),
-                        (currentRect.top * SMOOTHING_FACTOR) + (lastSmoothedRect.top * (1 - SMOOTHING_FACTOR)),
-                        (currentRect.right * SMOOTHING_FACTOR) + (lastSmoothedRect.right * (1 - SMOOTHING_FACTOR)),
-                        (currentRect.bottom * SMOOTHING_FACTOR) + (lastSmoothedRect.bottom * (1 - SMOOTHING_FACTOR))
-                );
-            }
-
-            // Return a new result with the smoothed coordinates
-            return new DetectionResult(lastSmoothedRect, best.getConfidence(), best.getLabel());
+        if (sameCount < 3) {
+            Log.e(TAG, "UNSTABLE OBJECT — waiting for consistency");
+            return null;
         }
 
-        return null;
+        // 3️⃣ Bounding box smoothing
+        RectF current = best.getBoundingBox();
+
+        if (lastSmoothedRect == null) {
+            lastSmoothedRect = new RectF(current);
+        } else {
+            lastSmoothedRect = new RectF(
+                    current.left * SMOOTHING_FACTOR + lastSmoothedRect.left * (1f - SMOOTHING_FACTOR),
+                    current.top * SMOOTHING_FACTOR + lastSmoothedRect.top * (1f - SMOOTHING_FACTOR),
+                    current.right * SMOOTHING_FACTOR + lastSmoothedRect.right * (1f - SMOOTHING_FACTOR),
+                    current.bottom * SMOOTHING_FACTOR + lastSmoothedRect.bottom * (1f - SMOOTHING_FACTOR)
+            );
+        }
+
+        Log.e(TAG, "STABLE OBJECT CONFIRMED");
+
+        return new DetectionResult(
+                lastSmoothedRect,
+                best.getConfidence(),
+                best.getLabel()
+        );
     }
 
+    // Checks if two detections refer to the same object
     private static boolean isSame(DetectionResult a, DetectionResult b) {
+        if (a == null || b == null) return false;
         if (!a.getLabel().equals(b.getLabel())) return false;
 
         RectF A = a.getBoundingBox();
         RectF B = b.getBoundingBox();
+        if (A == null || B == null) return false;
 
-        // Check if the centers are relatively close to consider it the "same" object
         return Math.abs(A.centerX() - B.centerX()) < 150;
     }
 }

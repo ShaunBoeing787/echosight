@@ -6,12 +6,17 @@ import com.example.echosight.detection.DetectionResult;
 
 /**
  * Estimates proximity (distance category) of a detected object
- * based on bounding box height relative to image height.
+ * using a HYBRID heuristic:
+ *
+ * 1. Bounding box AREA ratio (object size)
+ * 2. Bottom-of-frame ratio (ground-plane approximation)
+ *
+ * This is more stable than height-only estimation.
  */
 public class ProximityEstimator {
 
     /**
-     * Enum representing proximity zones.
+     * Proximity zones.
      */
     public enum Proximity {
         FAR,
@@ -20,32 +25,49 @@ public class ProximityEstimator {
     }
 
     /**
-     * Estimates proximity using bounding box height ratio.
+     * Hybrid proximity estimation.
      *
-     * @param detection   Single detection result
-     * @param imageHeight Height of the camera frame in pixels
-     * @return Proximity (FAR, MID, NEAR)
+     * @param detection    Detection result
+     * @param imageWidth   Width of camera frame (px)
+     * @param imageHeight  Height of camera frame (px)
+     * @return Proximity category
      */
     public static Proximity estimateProximity(
             DetectionResult detection,
+            int imageWidth,
             int imageHeight
     ) {
-        // Safety checks
-        if (detection == null || detection.getBoundingBox() == null || imageHeight <= 0) {
+        // ---------- SAFETY ----------
+        if (detection == null
+                || detection.getBoundingBox() == null
+                || imageWidth <= 0
+                || imageHeight <= 0) {
             return Proximity.FAR;
         }
 
         RectF box = detection.getBoundingBox();
 
-        // Bounding box height in pixels
-        float boxHeight = box.bottom - box.top;
+        // ---------- AREA RATIO ----------
+        float boxWidth = Math.max(0, box.right - box.left);
+        float boxHeight = Math.max(0, box.bottom - box.top);
 
-        // Ratio of object size to image height
-        float ratio = boxHeight / (float) imageHeight;
+        float boxArea = boxWidth * boxHeight;
+        float imageArea = imageWidth * imageHeight;
 
-        if (ratio < 0.25f) {
+        float areaRatio = boxArea / imageArea;   // 0.0 → 1.0
+
+        // ---------- BOTTOM POSITION ----------
+        float bottomRatio = box.bottom / imageHeight; // 0.0 (top) → 1.0 (bottom)
+
+        // ---------- HYBRID SCORE ----------
+        // Area = size cue
+        // Bottom = distance cue (ground plane)
+        float score = (0.6f * areaRatio) + (0.4f * bottomRatio);
+
+        // ---------- THRESHOLDS ----------
+        if (score < 0.15f) {
             return Proximity.FAR;
-        } else if (ratio < 0.5f) {
+        } else if (score < 0.35f) {
             return Proximity.MID;
         } else {
             return Proximity.NEAR;

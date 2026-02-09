@@ -3,7 +3,7 @@ person
 bicycle
 car
 motorcycle
-airplane
+chair
 bus
 train
 truck
