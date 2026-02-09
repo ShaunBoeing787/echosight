@@ -49,43 +49,47 @@ public class FrameAnalyzer implements ImageAnalysis.Analyzer {
 
     @Override
     public void analyze(@NonNull ImageProxy imageProxy) {
+        // ---------- GATEKEEPER: SPEECH SUPPRESSION ----------
+        // If the app is currently speaking (e.g., a lively description),
+        // we skip processing entirely to avoid audio clutter.
+        if (speechOutput.isSpeaking()) {
+            imageProxy.close();
+            return;
+        }
 
         try {
             Image image = imageProxy.getImage();
             if (image == null) return;
 
+            // Use your utility to convert the camera frame to a Bitmap
             Bitmap bitmap = ImageUtils.imageToBitmap(image);
             if (bitmap == null) return;
 
             // ---------- DETECTION ----------
             List<DetectionResult> detections = detector.detect(bitmap);
-            if (detections == null || detections.isEmpty()) return;
+            if (detections == null || detections.isEmpty()) {
+                // Clear overlay if nothing is detected
+                if (overlayView != null) overlayView.post(() -> overlayView.setResults(null));
+                return;
+            }
 
             // ---------- OVERLAY ----------
             if (overlayView != null) {
                 overlayView.post(() -> overlayView.setResults(detections));
             }
 
-            // ---------- STABILITY ----------
+            // ---------- STABILITY FILTER ----------
             DetectionResult stable = DetectionFilter.filter(detections);
             if (stable == null) return;
 
-            Log.e(TAG, "STABLE → " + stable.getLabel()
-                    + " (" + stable.getConfidence() + ")");
-
             // ---------- DIRECTION & PROXIMITY ----------
             DirectionEstimator.Direction direction =
-                    DirectionEstimator.estimateDirection(
-                            stable, bitmap.getWidth());
+                    DirectionEstimator.estimateDirection(stable, bitmap.getWidth());
 
             ProximityEstimator.Proximity proximity =
-                    ProximityEstimator.estimateProximity(
-                            stable, bitmap.getWidth(),bitmap.getHeight());
+                    ProximityEstimator.estimateProximity(stable, bitmap.getWidth(), bitmap.getHeight());
 
-            Log.e(TAG, "PROXIMITY → " + proximity);
-            Log.e(TAG, "DIRECTION → " + direction);
-
-            // ---------- HAPTICS (OPTIONAL, KEEP FOR ACCESSIBILITY) ----------
+            // ---------- ACCESSIBILITY FEEDBACK ----------
             try {
                 FeedbackController.ProximityLevel level =
                         FeedbackController.ProximityLevel.valueOf(proximity.name());
@@ -94,38 +98,22 @@ public class FrameAnalyzer implements ImageAnalysis.Analyzer {
                 Log.e(TAG, "Feedback error", e);
             }
 
-            // ---------- SEMANTIC FILTER ----------
-            SemanticMapper.SemanticType semanticType =
-                    SemanticMapper.classify(stable.getLabel());
+            // ---------- SEMANTIC & OBSTACLE LOGIC ----------
+            SemanticMapper.SemanticType semanticType = SemanticMapper.classify(stable.getLabel());
+            if (semanticType == SemanticMapper.SemanticType.IGNORE) return;
 
-            if (semanticType == SemanticMapper.SemanticType.IGNORE) {
-                Log.e(TAG, "IGNORED → " + stable.getLabel());
+            if (!ObstacleDecision.isBlocking(stable, bitmap.getWidth(), bitmap.getHeight())) {
                 return;
             }
 
-            // ---------- OBSTACLE DECISION ----------
-            boolean blocking = ObstacleDecision.isBlocking(
-                    stable,
-                    bitmap.getWidth(),
-                    bitmap.getHeight()
-            );
-
-            if (!blocking) {
-                Log.e(TAG, "FREE SPACE → " + stable.getLabel());
-                return;
-            }
-
-            // ---------- SPEECH (PROXIMITY SENTENCE) ----------
+            // ---------- SPEECH OUTPUT ----------
             long now = System.currentTimeMillis();
-            String message = buildProximityMessage(
-                    stable.getLabel(),
-                    proximity
-            );
+            String message = buildProximityMessage(stable.getLabel(), proximity);
 
-            if (now - lastSpeechTime > SPEECH_COOLDOWN
-                    || !message.equals(lastSpokenMessage)) {
-
-                Log.e(TAG, "SPEAKING → " + message);
+            // Double-check isSpeaking right before calling tts.speak
+            // to catch any sudden voice commands.
+            if (!speechOutput.isSpeaking() && (now - lastSpeechTime > SPEECH_COOLDOWN || !message.equals(lastSpokenMessage))) {
+                Log.d(TAG, "LOCAL DETECTION SPEAKING → " + message);
                 speechOutput.speak(message);
 
                 lastSpeechTime = now;
@@ -139,7 +127,6 @@ public class FrameAnalyzer implements ImageAnalysis.Analyzer {
         }
     }
 
-    // ---------- PROXIMITY SPEECH BUILDER ----------
     private String buildProximityMessage(
             String label,
             ProximityEstimator.Proximity proximity
