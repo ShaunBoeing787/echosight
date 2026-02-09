@@ -8,16 +8,21 @@ import java.util.List;
 public class DetectionFilter {
 
     private static final int HISTORY_SIZE = 5;
-    private static final LinkedList<DetectionResult> history =
-            new LinkedList<>();
+    private static final LinkedList<DetectionResult> history = new LinkedList<>();
+
+    // NEW: Variable to store the smoothed position across frames
+    private static RectF lastSmoothedRect = null;
+    // NEW: Smoothing factor (0.1 = very slow/stable, 0.3 = smooth, 1.0 = raw/shaky)
+    private static final float SMOOTHING_FACTOR = 0.25f;
 
     public static DetectionResult filter(List<DetectionResult> detections) {
 
         if (detections == null || detections.isEmpty()) {
+            lastSmoothedRect = null; // Reset if nothing is seen
             return null;
         }
 
-        // pick largest confident object
+        // 1. Pick largest confident object
         DetectionResult best = null;
         float maxArea = 0;
 
@@ -25,7 +30,7 @@ public class DetectionFilter {
             if (d.getConfidence() < 0.4f) continue;
 
             RectF b = d.getBoundingBox();
-            float area = (b.right - b.left) * (b.bottom - b.top);
+            float area = Math.abs(b.width() * b.height());
 
             if (area > maxArea) {
                 maxArea = area;
@@ -35,37 +40,46 @@ public class DetectionFilter {
 
         if (best == null) return null;
 
-        // store history
+        // 2. History Check (for flickering suppression)
         history.add(best);
-        if (history.size() > HISTORY_SIZE)
-            history.removeFirst();
+        if (history.size() > HISTORY_SIZE) history.removeFirst();
 
-        // count similar detections
-        int count = 0;
+        int sameCount = 0;
         for (DetectionResult d : history) {
-            if (isSame(best, d)) count++;
+            if (isSame(best, d)) sameCount++;
         }
 
-        if (count >= 3) {
-            return best; // stable enough
+        // 3. APPLY TEMPORAL SMOOTHING
+        if (sameCount >= 3) {
+            RectF currentRect = best.getBoundingBox();
+
+            if (lastSmoothedRect == null) {
+                lastSmoothedRect = currentRect;
+            } else {
+                // Exponential Moving Average Math:
+                // NewPos = (Current * Factor) + (Last * (1 - Factor))
+                lastSmoothedRect = new RectF(
+                        (currentRect.left * SMOOTHING_FACTOR) + (lastSmoothedRect.left * (1 - SMOOTHING_FACTOR)),
+                        (currentRect.top * SMOOTHING_FACTOR) + (lastSmoothedRect.top * (1 - SMOOTHING_FACTOR)),
+                        (currentRect.right * SMOOTHING_FACTOR) + (lastSmoothedRect.right * (1 - SMOOTHING_FACTOR)),
+                        (currentRect.bottom * SMOOTHING_FACTOR) + (lastSmoothedRect.bottom * (1 - SMOOTHING_FACTOR))
+                );
+            }
+
+            // Return a new result with the smoothed coordinates
+            return new DetectionResult(lastSmoothedRect, best.getConfidence(), best.getLabel());
         }
 
         return null;
     }
 
-    private static boolean isSame(
-            DetectionResult a,
-            DetectionResult b
-    ) {
-        if (!a.getLabel().equals(b.getLabel()))
-            return false;
+    private static boolean isSame(DetectionResult a, DetectionResult b) {
+        if (!a.getLabel().equals(b.getLabel())) return false;
 
         RectF A = a.getBoundingBox();
         RectF B = b.getBoundingBox();
 
-        float centerA = (A.left + A.right) / 2f;
-        float centerB = (B.left + B.right) / 2f;
-
-        return Math.abs(centerA - centerB) < 100; // tolerance
+        // Check if the centers are relatively close to consider it the "same" object
+        return Math.abs(A.centerX() - B.centerX()) < 150;
     }
 }

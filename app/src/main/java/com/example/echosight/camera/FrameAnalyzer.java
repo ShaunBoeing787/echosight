@@ -11,10 +11,11 @@ import androidx.camera.core.ImageProxy;
 
 import com.example.echosight.detection.DetectionResult;
 import com.example.echosight.detection.ObjectDetector;
+import com.example.echosight.feedback.FeedbackController;
 import com.example.echosight.logic.DetectionFilter;
 import com.example.echosight.logic.DirectionEstimator;
 import com.example.echosight.logic.ProximityEstimator;
-import com.example.echosight.voice.SpeechOutput; // Required
+import com.example.echosight.voice.SpeechOutput;
 
 import java.util.List;
 
@@ -23,20 +24,25 @@ public class FrameAnalyzer implements ImageAnalysis.Analyzer {
 
     private static final String TAG = "ECHO_SIGHT";
     private final ObjectDetector detector;
-    private final SpeechOutput speechOutput; // The "Mouth"
+    private final SpeechOutput speechOutput;
+    private final OverlayView overlayView;
+    private final FeedbackController feedbackController; // Added for haptics/audio
 
-    // Throttle detection (Prevents CPU overload)
     private long lastRunTime = 0;
-    private static final long DETECT_INTERVAL = 250; // ms
+    private static final long DETECT_INTERVAL = 0;
 
-    // Throttle speech (Prevents annoying repetition)
     private long lastSpeechTime = 0;
-    private static final long SPEECH_COOLDOWN = 3000; // 3 seconds
+    private static final long SPEECH_COOLDOWN = 3000;
     private String lastSpokenObject = "";
 
-    public FrameAnalyzer(ObjectDetector detector, SpeechOutput speechOutput) {
+    public FrameAnalyzer(ObjectDetector detector,
+                         SpeechOutput speechOutput,
+                         OverlayView overlayView,
+                         FeedbackController feedbackController) {
         this.detector = detector;
         this.speechOutput = speechOutput;
+        this.overlayView = overlayView;
+        this.feedbackController = feedbackController;
     }
 
     @Override
@@ -44,7 +50,6 @@ public class FrameAnalyzer implements ImageAnalysis.Analyzer {
         try {
             long now = System.currentTimeMillis();
 
-            // 1. Throttle detection frequency
             if (now - lastRunTime < DETECT_INTERVAL) {
                 imageProxy.close();
                 return;
@@ -57,43 +62,47 @@ public class FrameAnalyzer implements ImageAnalysis.Analyzer {
                 return;
             }
 
-            // 2. Convert frame to Bitmap
             Bitmap bitmap = ImageUtils.imageToBitmap(image);
             if (bitmap == null) {
                 imageProxy.close();
                 return;
             }
 
-            // 3. Run TFLite Detection
+            // 1. Detection
             List<DetectionResult> detections = detector.detect(bitmap);
 
-            // 4. Filter for stability
+            // 2. Visual Feedback (Overlay)
+            if (overlayView != null) {
+                overlayView.post(() -> overlayView.setResults(detections));
+            }
+
+            // 3. Logic & Sensory Feedback
             DetectionResult stable = DetectionFilter.filter(detections);
 
             if (stable != null) {
-                // 5. Calculate Direction and Proximity
                 DirectionEstimator.Direction direction =
                         DirectionEstimator.estimateDirection(stable, bitmap.getWidth());
 
                 ProximityEstimator.Proximity proximity =
                         ProximityEstimator.estimateProximity(stable, bitmap.getHeight());
 
-                String currentObject = stable.getLabel();
-
-                // 6. INTELLIGENT SPEECH LOGIC
-                // Only speak if: 3 seconds have passed OR it's a brand new object
-                if (now - lastSpeechTime > SPEECH_COOLDOWN || !currentObject.equals(lastSpokenObject)) {
-
-                    String feedback = currentObject + " " + direction + " is " + proximity;
-                    speechOutput.speak(feedback);
-
-                    lastSpeechTime = now;
-                    lastSpokenObject = currentObject;
-
-                    Log.e(TAG, "ANNOUNCING: " + feedback);
+                // TRIGGER HAPTICS AND BEEPS
+                // Maps Proximity (Logic) to ProximityLevel (Feedback)
+                try {
+                    FeedbackController.ProximityLevel level =
+                            FeedbackController.ProximityLevel.valueOf(proximity.name());
+                    feedbackController.handleProximity(level);
+                } catch (Exception e) {
+                    Log.e(TAG, "Feedback Mapping Error: " + e.getMessage());
                 }
 
-                Log.d(TAG, "STABLE: " + currentObject + " | " + direction + " | " + proximity);
+                // SPEECH LOGIC
+                String currentObject = stable.getLabel();
+                if (now - lastSpeechTime > SPEECH_COOLDOWN || !currentObject.equals(lastSpokenObject)) {
+                    speechOutput.speak(currentObject + " " + direction);
+                    lastSpeechTime = now;
+                    lastSpokenObject = currentObject;
+                }
             }
 
         } catch (Exception e) {

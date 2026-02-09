@@ -16,7 +16,11 @@ import androidx.core.content.ContextCompat;
 
 import com.example.echosight.camera.CameraManager;
 import com.example.echosight.camera.FrameAnalyzer;
+import com.example.echosight.camera.OverlayView;
 import com.example.echosight.detection.ObjectDetector;
+import com.example.echosight.feedback.AudioFeedback;
+import com.example.echosight.feedback.FeedbackController;
+import com.example.echosight.feedback.HapticManager;
 import com.example.echosight.voice.SpeechOutput;
 import com.example.echosight.voice.VoiceCommandManager;
 import com.example.echosight.utils.PermissionUtils;
@@ -27,10 +31,16 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "ECHO_SIGHT";
 
     private PreviewView previewView;
+    private OverlayView overlayView;
     private ObjectDetector detector;
     private SpeechOutput speechOutput;
     private VoiceCommandManager voiceManager;
-    private CameraManager cameraManager; // Moved to class level
+    private CameraManager cameraManager;
+
+    // Feedback Systems
+    private FeedbackController feedbackController;
+    private AudioFeedback audioFeedback;
+    private HapticManager hapticManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -38,8 +48,8 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         previewView = findViewById(R.id.previewView);
+        overlayView = findViewById(R.id.overlayView);
 
-        // Standard permission check on startup
         if (PermissionUtils.hasPermissions(this)) {
             initializeEchoSight();
         } else {
@@ -51,19 +61,17 @@ public class MainActivity extends AppCompatActivity {
         Log.d(TAG, "!!! INITIALIZING ECHO-SIGHT SYSTEMS !!!");
 
         try {
-            // 1. Initialize Mouth (Speech Output)
             speechOutput = new SpeechOutput(this);
-
-            // 2. Initialize Brain (Object Detector)
             detector = new ObjectDetector(this);
 
-            // 3. Initialize Camera Controller (The Eyes)
+            // Initialize Sensory Feedback Trio
+            audioFeedback = new AudioFeedback();
+            hapticManager = new HapticManager(this);
+            feedbackController = new FeedbackController(hapticManager, audioFeedback);
+
             cameraManager = new CameraManager(this, this, previewView);
 
-            // 4. Initialize Ears (Voice Command Manager)
             voiceManager = new VoiceCommandManager(this, command -> {
-                Log.d(TAG, "MainActivity received command: " + command);
-
                 if (command.equals("START")) {
                     handleStartNavigation();
                 } else if (command.equals("STOP")) {
@@ -71,9 +79,7 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
 
-            // Start listening for voice triggers immediately
             voiceManager.startListening();
-
             Log.i(TAG, "ALL SYSTEMS READY: Awaiting 'Start' command.");
 
         } catch (Exception e) {
@@ -83,9 +89,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void handleStartNavigation() {
-        speechOutput.speak("Navigation started. Scanning for objects.");
+        speechOutput.speak("Navigation started. Scanning.");
 
-        // Double check permissions before opening hardware
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED) {
             startCameraHardware();
@@ -95,45 +100,22 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void handleStopNavigation() {
-        Log.d(TAG, "Stopping hardware feed...");
-        speechOutput.speak("Navigation stopped. Standing by.");
-
-        if (cameraManager != null) {
-            cameraManager.stopCamera(); // Uses the stopCamera method we added earlier
-        }
+        speechOutput.speak("Navigation stopped.");
+        if (cameraManager != null) cameraManager.stopCamera();
+        if (overlayView != null) overlayView.setResults(null);
+        if (hapticManager != null) hapticManager.stop();
     }
 
     @androidx.camera.core.ExperimentalGetImage
     private void startCameraHardware() {
-        Log.e(TAG, "STARTING CAMERA FEED");
-        // Pass both detector and speechOutput to the analyzer for verbal feedback
-        cameraManager.startCamera(new FrameAnalyzer(detector, speechOutput));
+        // Pass detector, speech, overlay, AND feedbackController to the analyzer
+        cameraManager.startCamera(new FrameAnalyzer(detector, speechOutput, overlayView, feedbackController));
     }
-
-    // --- Permission Handling ---
 
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
-                if (isGranted) {
-                    startCameraHardware();
-                } else {
-                    Toast.makeText(this, "Camera permission required for navigation.", Toast.LENGTH_LONG).show();
-                }
+                if (isGranted) startCameraHardware();
             });
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == PermissionUtils.REQUEST_CODE) {
-            if (PermissionUtils.hasPermissions(this)) {
-                initializeEchoSight();
-            } else {
-                Toast.makeText(this, "Permissions required for Echo Sight.", Toast.LENGTH_LONG).show();
-            }
-        }
-    }
-
-    // --- Cleanup ---
 
     @Override
     protected void onDestroy() {
@@ -141,5 +123,6 @@ public class MainActivity extends AppCompatActivity {
         if (speechOutput != null) speechOutput.shutdown();
         if (voiceManager != null) voiceManager.stop();
         if (cameraManager != null) cameraManager.stopCamera();
+        if (audioFeedback != null) audioFeedback.release();
     }
 }
