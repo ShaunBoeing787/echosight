@@ -7,7 +7,7 @@ public class DetectionResult {
     private final float confidence;
     private final RectF location;
 
-    public DetectionResult(RectF location, float confidence,String title ) {
+    public DetectionResult(RectF location, float confidence, String title) {
         this.title = title;
         this.confidence = confidence;
         this.location = location;

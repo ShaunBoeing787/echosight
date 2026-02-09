@@ -1,14 +1,25 @@
 package com.example.echosight;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.util.Log;
+import android.widget.Toast;
+
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
-import com.example.echosight.detection.ObjectDetector; // Unified package
-import com.example.echosight.detection.DetectionResult;
-import java.util.List;
+import androidx.camera.view.PreviewView;
+import androidx.core.content.ContextCompat;
+
+import com.example.echosight.camera.CameraManager;
+import com.example.echosight.camera.FrameAnalyzer;
+import com.example.echosight.detection.ObjectDetector;
 
 public class MainActivity extends AppCompatActivity {
+
     private static final String TAG = "ECHO_SIGHT";
+
+    private PreviewView previewView;
     private ObjectDetector detector;
 
     @Override
@@ -16,48 +27,75 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // Final Sector 2 Integration Test
-        Log.e(TAG, "!!! ECHO-SIGHT STARTING: INITIALIZING SECTOR 2 !!!");
+        Log.e(TAG, "APP STARTED");
 
+        previewView = findViewById(R.id.previewView);
+
+        // Initialize detector (Sector 2)
         try {
-            // This now initializes the Interpreter AND loads the labels
             detector = new ObjectDetector(this);
-
-            Log.e(TAG, "✅ SECTOR 2 SUCCESS: Brain is ready for camera feed.");
+            Log.e(TAG, "DETECTOR INITIALIZED");
         } catch (Exception e) {
-            Log.e(TAG, "❌ SECTOR 2 CRITICAL FAIL: " + e.getMessage());
-            // This will tell you if labelmap.txt or detect.tflite is missing
+            Log.e(TAG, "DETECTOR INIT FAILED: " + e.getMessage());
             e.printStackTrace();
         }
-        // ===== FINAL SECTOR 2 → 3 PIPELINE TEST =====
-        DetectionResult fake = new DetectionResult(
-                new android.graphics.RectF(100, 100, 400, 800), // big object
-                0.9f,
-                "person"
-        );
 
-        java.util.List<DetectionResult> fakeList =
-                java.util.Collections.singletonList(fake);
-
-        DetectionResult stable =
-                com.example.echosight.logic.DetectionFilter.filter(fakeList);
-
-        if (stable != null) {
-            com.example.echosight.logic.ProximityEstimator.Proximity p =
-                    com.example.echosight.logic.ProximityEstimator.estimateProximity(
-                            stable, 1000
-                    );
-
-            com.example.echosight.logic.DirectionEstimator.Direction d =
-                    com.example.echosight.logic.DirectionEstimator.estimateDirection(
-                            stable, 1000
-                    );
-
-            Log.e(TAG, "🧠 FINAL LOGIC OUTPUT → Proximity: " + p + ", Direction: " + d);
-        } else {
-            Log.e(TAG, "❌ Detection filtered out");
-        }
-// ===== END TEST =====
-
+        checkCameraPermission();
     }
+
+    /**
+     * Check camera permission
+     */
+    private void checkCameraPermission() {
+
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED) {
+
+            Log.e(TAG, "PERMISSION ALREADY GRANTED");
+            startCamera();
+
+        } else {
+
+            Log.e(TAG, "REQUESTING CAMERA PERMISSION");
+            requestPermissionLauncher.launch(Manifest.permission.CAMERA);
+        }
+    }
+
+    /**
+     * Start camera + analyzer
+     */
+    private void startCamera() {
+
+        Log.e(TAG, "STARTING CAMERA");
+
+        CameraManager manager =
+                new CameraManager(this, this, previewView);
+
+        // Pass detector into analyzer
+        manager.startCamera(new FrameAnalyzer(detector));
+    }
+
+    /**
+     * Permission launcher
+     */
+    private final androidx.activity.result.ActivityResultLauncher<String>
+            requestPermissionLauncher =
+            registerForActivityResult(
+                    new ActivityResultContracts.RequestPermission(),
+                    isGranted -> {
+                        if (isGranted) {
+                            Log.e(TAG, "PERMISSION GRANTED BY USER");
+                            startCamera();
+                        } else {
+                            Log.e(TAG, "PERMISSION DENIED");
+                            Toast.makeText(
+                                    this,
+                                    "Camera permission required",
+                                    Toast.LENGTH_LONG
+                            ).show();
+                        }
+                    }
+            );
 }
