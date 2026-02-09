@@ -3,17 +3,20 @@ package com.example.echosight;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.util.Log;
-import android.widget.Toast;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.View;
+import android.widget.Button;
+import android.widget.ImageView;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.ExperimentalGetImage;
 import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
 
+import com.bumptech.glide.Glide;
 import com.example.echosight.camera.CameraManager;
 import com.example.echosight.camera.FrameAnalyzer;
 import com.example.echosight.camera.OverlayView;
@@ -25,22 +28,26 @@ import com.example.echosight.voice.SpeechOutput;
 import com.example.echosight.voice.VoiceCommandManager;
 import com.example.echosight.utils.PermissionUtils;
 
+import android.widget.ImageButton;
+
 @ExperimentalGetImage
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TAG = "ECHO_SIGHT";
-
     private PreviewView previewView;
     private OverlayView overlayView;
+    private ImageView loadingGif;
+    private Button btnToggle;
+
     private ObjectDetector detector;
     private SpeechOutput speechOutput;
     private VoiceCommandManager voiceManager;
     private CameraManager cameraManager;
-
-    // Feedback Systems
     private FeedbackController feedbackController;
     private AudioFeedback audioFeedback;
     private HapticManager hapticManager;
+
+    private boolean isRunning = false;
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,6 +56,32 @@ public class MainActivity extends AppCompatActivity {
 
         previewView = findViewById(R.id.previewView);
         overlayView = findViewById(R.id.overlayView);
+        loadingGif = findViewById(R.id.loadingGif);
+        btnToggle = findViewById(R.id.btnToggleScan);
+
+        // Load centered GIF
+        Glide.with(this)
+                .asGif()
+                .load(R.drawable.loading)
+                .into(loadingGif);
+
+        // Initial forced loading → 2 sec
+        showStartAfterDelay(2000);
+
+        btnToggle.setOnClickListener(v -> {
+            if (!isRunning) {
+                startSystem();
+            } else {
+                stopSystem();
+            }
+        });
+
+        ImageButton btnHelp = findViewById(R.id.btnHelp);
+
+        btnHelp.setOnClickListener(v -> {
+            speechOutput.speak("Say start to begin navigation. Say stop to end.");
+        });
+
 
         if (PermissionUtils.hasPermissions(this)) {
             initializeEchoSight();
@@ -57,14 +90,62 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void initializeEchoSight() {
-        Log.d(TAG, "!!! INITIALIZING ECHO-SIGHT SYSTEMS !!!");
+    // ===============================
+    // SHOW START BUTTON AFTER DELAY
+    // ===============================
+    private void showStartAfterDelay(int delayMs) {
+        btnToggle.setVisibility(View.GONE);
+        loadingGif.setVisibility(View.VISIBLE);
 
+        handler.postDelayed(() -> {
+            btnToggle.setVisibility(View.VISIBLE);
+            btnToggle.setText("START");
+            btnToggle.setTextColor(0xFFB3E5FC);
+            btnToggle.setBackground(getDrawable(R.drawable.start_button_bg));
+        }, delayMs);
+    }
+
+
+    // ===============================
+    // START SYSTEM
+    // ===============================
+    private void startSystem() {
+        isRunning = true;
+
+        previewView.setVisibility(View.VISIBLE);
+        overlayView.setVisibility(View.VISIBLE);
+        loadingGif.setVisibility(View.GONE);
+
+        btnToggle.setText("STOP");
+        btnToggle.setTextColor(0xFFFFCDD2);
+        btnToggle.setBackground(getDrawable(R.drawable.stop_button_bg));
+
+        handleStartNavigation();
+    }
+
+    // ===============================
+    // STOP SYSTEM
+    // ===============================
+    private void stopSystem() {
+        isRunning = false;
+
+        previewView.setVisibility(View.GONE);
+        overlayView.setVisibility(View.GONE);
+
+        handleStopNavigation();
+
+        // show loading for 1 sec
+        showStartAfterDelay(1000);
+    }
+
+    // ===============================
+    // INIT SYSTEMS
+    // ===============================
+    private void initializeEchoSight() {
         try {
             speechOutput = new SpeechOutput(this);
             detector = new ObjectDetector(this);
 
-            // Initialize Sensory Feedback Trio
             audioFeedback = new AudioFeedback();
             hapticManager = new HapticManager(this);
             feedbackController = new FeedbackController(hapticManager, audioFeedback);
@@ -72,24 +153,19 @@ public class MainActivity extends AppCompatActivity {
             cameraManager = new CameraManager(this, this, previewView);
 
             voiceManager = new VoiceCommandManager(this, command -> {
-                if (command.equals("START")) {
-                    handleStartNavigation();
-                } else if (command.equals("STOP")) {
-                    handleStopNavigation();
-                }
+                if (command.equals("START")) startSystem();
+                if (command.equals("STOP")) stopSystem();
             });
 
             voiceManager.startListening();
-            Log.i(TAG, "ALL SYSTEMS READY: Awaiting 'Start' command.");
 
         } catch (Exception e) {
-            Log.e(TAG, "INIT FAILED: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
     private void handleStartNavigation() {
-        speechOutput.speak("Navigation started. Scanning.");
+        speechOutput.speak("Navigation started");
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED) {
@@ -100,26 +176,35 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void handleStopNavigation() {
-        speechOutput.speak("Navigation stopped.");
-        if (cameraManager != null) cameraManager.stopCamera();
-        if (overlayView != null) overlayView.setResults(null);
-        if (hapticManager != null) hapticManager.stop();
+        speechOutput.speak("Navigation stopped");
+
+        if (cameraManager != null)
+            cameraManager.stopCamera();
+
+        if (overlayView != null)
+            overlayView.setResults(null);
+
+        if (hapticManager != null)
+            hapticManager.stop();
     }
 
-    @androidx.camera.core.ExperimentalGetImage
     private void startCameraHardware() {
-        // Pass detector, speech, overlay, AND feedbackController to the analyzer
-        cameraManager.startCamera(new FrameAnalyzer(detector, speechOutput, overlayView, feedbackController));
+        cameraManager.startCamera(
+                new FrameAnalyzer(detector, speechOutput, overlayView, feedbackController)
+        );
     }
 
     private final ActivityResultLauncher<String> requestPermissionLauncher =
-            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
-                if (isGranted) startCameraHardware();
-            });
+            registerForActivityResult(
+                    new ActivityResultContracts.RequestPermission(),
+                    isGranted -> {
+                        if (isGranted) startCameraHardware();
+                    });
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
         if (speechOutput != null) speechOutput.shutdown();
         if (voiceManager != null) voiceManager.stop();
         if (cameraManager != null) cameraManager.stopCamera();
