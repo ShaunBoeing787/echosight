@@ -9,6 +9,7 @@ import android.speech.SpeechRecognizer;
 import android.util.Log;
 
 import java.util.ArrayList;
+import java.util.concurrent.ExecutionException;
 
 public class VoiceCommandManager {
     private SpeechRecognizer speechRecognizer;
@@ -16,7 +17,7 @@ public class VoiceCommandManager {
     private CommandListener listener;
 
     public interface CommandListener {
-        void onCommandReceived(String command);
+        void onCommandReceived(String command) throws ExecutionException, InterruptedException;
     }
 
     public VoiceCommandManager(Context context, CommandListener listener) {
@@ -27,31 +28,46 @@ public class VoiceCommandManager {
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
 
         speechRecognizer.setRecognitionListener(new RecognitionListener() {
+            // Inside your onResults method in VoiceCommandManager.java
             @Override
             public void onResults(Bundle results) {
                 ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                 if (matches != null) {
-                    // IMPORTANT: This tells us what the phone actually heard
-                    Log.d("EchoSightVoice", "Full list of heard words: " + matches.toString());
-
                     for (String match : matches) {
                         String voiceInput = match.toLowerCase().trim();
-
-                        // Log each individual word check
-                        Log.d("EchoSightVoice", "Checking word: " + voiceInput);
+                        Log.d("EchoSightVoice", "Heard: " + voiceInput);
 
                         if (voiceInput.contains("start")) {
-                            Log.d("EchoSightVoice", "Confirmed: START");
-                            listener.onCommandReceived("START");
-                        }
-                        // Using .equals or .contains to be safe
-                        else if (voiceInput.contains("end") || voiceInput.contains("pause")) {
-                            Log.d("EchoSightVoice", "Confirmed: STOP");
-                            listener.onCommandReceived("STOP");
+                            try {
+                                listener.onCommandReceived("START");
+                            } catch (ExecutionException e) {
+                                throw new RuntimeException(e);
+                            } catch (InterruptedException e) {
+                                throw new RuntimeException(e);
+                            }
+                            break;
+                        } else if (voiceInput.contains("stop") || voiceInput.contains("end")) {
+                            try {
+                                listener.onCommandReceived("STOP");
+                            } catch (ExecutionException e) {
+                                throw new RuntimeException(e);
+                            } catch (InterruptedException e) {
+                                throw new RuntimeException(e);
+                            }
+                            break;
+                        } else if (voiceInput.contains("describe") || voiceInput.contains("what")) {
+                            try {
+                                listener.onCommandReceived("DESCRIBE");
+                            } catch (ExecutionException e) {
+                                throw new RuntimeException(e);
+                            } catch (InterruptedException e) {
+                                throw new RuntimeException(e);
+                            }
+                            break;
                         }
                     }
                 }
-                startListening();
+                startListening(); // Resume listening for the next command
             }
 
             @Override public void onError(int error) { startListening(); }

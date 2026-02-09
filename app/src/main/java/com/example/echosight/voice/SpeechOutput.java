@@ -2,30 +2,48 @@ package com.example.echosight.voice;
 
 import android.content.Context;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import java.util.Locale;
 
-/**
- * Handles all verbal communication from the app.
- */
 public class SpeechOutput {
     private TextToSpeech tts;
-    private boolean isReady = false;
+    private boolean isSpeaking = false;
 
     public SpeechOutput(Context context) {
         tts = new TextToSpeech(context, status -> {
-            if (status == TextToSpeech.SUCCESS) {
+            if (status != TextToSpeech.ERROR) {
                 tts.setLanguage(Locale.US);
-                isReady = true;
-                // Initial test message
-                speak("Echo Sight initialized");
+                setupProgressListener();
+            }
+        });
+    }
+
+    private void setupProgressListener() {
+        tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+            @Override
+            public void onStart(String utteranceId) {
+                isSpeaking = true; // Detection will pause
+            }
+
+            @Override
+            public void onDone(String utteranceId) {
+                isSpeaking = false; // Detection will resume
+            }
+
+            @Override
+            public void onError(String utteranceId) {
+                isSpeaking = false;
             }
         });
     }
 
     public void speak(String text) {
-        if (isReady && tts != null) {
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
-        }
+        // We provide a unique ID to trigger the ProgressListener
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "UTTERANCE_ID");
+    }
+
+    public boolean isSpeaking() {
+        return isSpeaking;
     }
 
     public void shutdown() {
