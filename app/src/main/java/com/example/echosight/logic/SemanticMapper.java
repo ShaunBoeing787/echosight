@@ -7,7 +7,7 @@ import java.util.Set;
 public class SemanticMapper {
 
     private static final Set<String> OBSTACLES = new HashSet<>(Arrays.asList(
-            "person", "bench", "chair","bottle","book","laptop"
+            "person", "bench", "chair","bottle","laptop","tv"
     ));
 
     private static final Set<String> IGNORE = new HashSet<>(Arrays.asList(
@@ -15,7 +15,7 @@ public class SemanticMapper {
             "fork", "knife", "spoon", "banana", "apple","couch", "bed",
             "car", "bus", "truck", "motorcycle", "bicycle",
             "potted plant", "fire hydrant", "stop sign",
-            "traffic light", "parking meter"
+            "parking meter", "refrigerator", "umbrella",""
     ));
 
     public enum SemanticType {

@@ -65,9 +65,9 @@ public class ProximityEstimator {
         float score = (0.6f * areaRatio) + (0.4f * bottomRatio);
 
         // ---------- THRESHOLDS ----------
-        if (score < 0.15f) {
+        if (score < 0.35f) {
             return Proximity.FAR;
-        } else if (score < 0.35f) {
+        } else if (score < 0.55f) {
             return Proximity.MID;
         } else {
             return Proximity.NEAR;

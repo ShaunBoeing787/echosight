@@ -20,6 +20,7 @@ import com.example.echosight.logic.ObstacleDecision;
 import com.example.echosight.voice.SpeechOutput;
 
 import java.util.List;
+import java.util.Random;
 
 @ExperimentalGetImage
 public class FrameAnalyzer implements ImageAnalysis.Analyzer {
@@ -34,6 +35,26 @@ public class FrameAnalyzer implements ImageAnalysis.Analyzer {
     private long lastSpeechTime = 0;
     private static final long SPEECH_COOLDOWN = 3000;
     private String lastSpokenMessage = "";
+    private final Random random = new Random();
+
+    private static final String[] FAR_PHRASES = {
+            "%s is far ahead",
+            "There is a %s ahead",
+            "%s detected at a distance"
+    };
+
+    private static final String[] MID_PHRASES = {
+            "%s is some steps ahead",
+            "%s is in front of you",
+            "You are approaching a %s"
+    };
+
+    private static final String[] NEAR_PHRASES = {
+            "%s is very near you",
+            "Careful, %s is right in front of you",
+            "%s is extremely close",
+            "Watch out, %s nearby"
+    };
 
     public FrameAnalyzer(
             ObjectDetector detector,
@@ -131,15 +152,27 @@ public class FrameAnalyzer implements ImageAnalysis.Analyzer {
             String label,
             ProximityEstimator.Proximity proximity
     ) {
+        String[] phrases;
+
         switch (proximity) {
             case FAR:
-                return label + " is far ahead";
+                phrases = FAR_PHRASES;
+                break;
+
             case MID:
-                return label + " is some steps ahead";
+                phrases = MID_PHRASES;
+                break;
+
             case NEAR:
-                return label + " is very near you";
+                phrases = NEAR_PHRASES;
+                break;
+
             default:
                 return label + " ahead";
         }
+
+        String template = phrases[random.nextInt(phrases.length)];
+        return String.format(template, label);
     }
+
 }
