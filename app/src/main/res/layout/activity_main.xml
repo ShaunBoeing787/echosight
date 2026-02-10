@@ -4,13 +4,13 @@
     android:layout_height="match_parent"
     android:background="#000">
 
-    <!-- GIF BACKGROUND -->
+    <!-- BACKGROUND GIF -->
     <ImageView
         android:id="@+id/loadingGif"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scaleType="centerCrop"
-        android:translationX="-10dp"/>
+        android:alpha="1"/>
 
     <!-- CAMERA -->
     <androidx.camera.view.PreviewView
@@ -26,38 +26,59 @@
         android:layout_height="match_parent"
         android:visibility="gone"/>
 
-    <!-- HELP BUTTON -->
-    <ImageButton
-        android:id="@+id/btnHelp"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|end"
-        android:layout_margin="16dp"
-        android:background="@drawable/help_button_bg"
-        android:src="@android:drawable/ic_menu_help"
-        android:tint="#B3E5FC"/>
-
-    <!-- BOTTOM PANEL -->
+    <!-- CENTER CONTROLS -->
     <LinearLayout
+        android:id="@+id/centerControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:orientation="vertical"
         android:gravity="center"
-        android:padding="20dp"
-        android:background="#33000000">
+        android:orientation="vertical"
+        android:layout_gravity="center"
+        android:visibility="gone">
 
-        <!-- START STOP BUTTON -->
         <Button
             android:id="@+id/btnToggleScan"
-            android:layout_width="180dp"
-            android:layout_height="55dp"
+            android:layout_width="260dp"
+            android:layout_height="70dp"
             android:text="START"
-            android:textSize="17sp"
-            android:textColor="#AEEAFC"
+            android:textSize="22sp"
+            android:textColor="#00FFFF"
             android:background="@drawable/start_button_bg"
-            android:visibility="gone"/>
+            android:layout_marginBottom="20dp"/>
+
+
 
     </LinearLayout>
+
+    <!-- HELP BUTTON (ALWAYS TOP LEFT) -->
+    <!-- HELP BUTTON (top-left) -->
+    <Button
+        android:id="@+id/btnHelp"
+        android:layout_width="140dp"
+        android:layout_height="56dp"
+        android:text="HELP"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="#FFFF00"
+        android:background="@drawable/help_button_bg"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="16dp"/>
+
+    <!-- STOP BUTTON (top-right) -->
+    <Button
+        android:id="@+id/btnStop"
+        android:layout_width="140dp"
+        android:layout_height="56dp"
+        android:text="STOP"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="#FF0000"
+        android:background="@drawable/stop_button_bg"
+        android:layout_gravity="top|end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginTop="16dp"
+        android:visibility="gone"/>
+
 
 </FrameLayout>

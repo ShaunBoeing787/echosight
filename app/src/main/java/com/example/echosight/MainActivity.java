@@ -1,7 +1,6 @@
 package com.example.echosight;
 
 import android.Manifest;
-import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.Handler;
@@ -11,6 +10,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -33,7 +33,7 @@ import com.example.echosight.voice.SpeechOutput;
 import com.example.echosight.voice.VoiceCommandManager;
 import com.example.echosight.utils.PermissionUtils;
 
-import java.util.concurrent.Executors; // Only one import needed
+import java.util.concurrent.Executors;
 
 @ExperimentalGetImage
 public class MainActivity extends AppCompatActivity {
@@ -44,6 +44,9 @@ public class MainActivity extends AppCompatActivity {
     private OverlayView overlayView;
     private ImageView loadingGif;
     private Button btnToggle;
+    private Button btnStop;
+    private Button btnHelp;
+    private LinearLayout centerControls;
 
     private ObjectDetector detector;
     private SpeechOutput speechOutput;
@@ -51,7 +54,7 @@ public class MainActivity extends AppCompatActivity {
     private CameraManager cameraManager;
     private EnvironmentNarrator environmentNarrator;
     private FeedbackController feedbackController;
-    private AudioFeedback audioFeedback; // Declare here so it is accessible everywhere
+    private AudioFeedback audioFeedback;
     private HapticManager hapticManager;
 
     private boolean isRunning = false;
@@ -76,9 +79,14 @@ public class MainActivity extends AppCompatActivity {
         overlayView = findViewById(R.id.overlayView);
         loadingGif = findViewById(R.id.loadingGif);
         btnToggle = findViewById(R.id.btnToggleScan);
-        ImageButton btnHelp = findViewById(R.id.btnHelp);
+        btnStop = findViewById(R.id.btnStop);
+        btnHelp = findViewById(R.id.btnHelp);
+        centerControls = findViewById(R.id.centerControls);
 
         Glide.with(this).asGif().load(R.drawable.loading).into(loadingGif);
+
+        btnStop.setVisibility(View.GONE);
+        btnHelp.setVisibility(View.VISIBLE);
 
         showStartAfterDelay(2000);
 
@@ -87,8 +95,11 @@ public class MainActivity extends AppCompatActivity {
             else stopSystem();
         });
 
+        btnStop.setOnClickListener(v -> stopSystem());
+
         btnHelp.setOnClickListener(v -> {
-            if (speechOutput != null) speechOutput.speak("Say start to begin navigation. Say stop to end.");
+            if (speechOutput != null)
+                speechOutput.speak("The start button is at the center, you can say start instead. Stop button will be at top right corner after starting; instead you can just say stop. Say describe to analyze. For help press the help button at the top left corner");
         });
 
         if (PermissionUtils.hasPermissions(this)) {
@@ -107,7 +118,6 @@ public class MainActivity extends AppCompatActivity {
             speechOutput = new SpeechOutput(this);
             detector = new ObjectDetector(this);
 
-            // FIX: Initialize the class-level variables, don't re-declare them
             audioFeedback = new AudioFeedback();
             hapticManager = new HapticManager(this);
             feedbackController = new FeedbackController(hapticManager, audioFeedback);
@@ -115,12 +125,12 @@ public class MainActivity extends AppCompatActivity {
             try {
                 String myKey = BuildConfig.GEMINI_API_KEY;
                 environmentNarrator = new EnvironmentNarrator(myKey);
-                Log.d(TAG, "GEMINI: Narrator initialized.");
             } catch (Exception aiEx) {
-                Log.e(TAG, "GEMINI ERROR: " + aiEx.getMessage());
+                Log.e(TAG, "Gemini error: " + aiEx.getMessage());
             }
 
             cameraManager = new CameraManager(this, this, previewView);
+
             voiceManager = new VoiceCommandManager(this, command -> {
                 if (command.equals("START")) startSystem();
                 else if (command.equals("STOP")) stopSystem();
@@ -131,18 +141,35 @@ public class MainActivity extends AppCompatActivity {
             speechOutput.speak("Systems ready.");
 
         } catch (Exception e) {
-            Log.e(TAG, "FATAL ERROR during init: " + e.getMessage());
+            Log.e(TAG, "Init error: " + e.getMessage());
         }
+    }
+
+    private void showStartAfterDelay(int delayMs) {
+        centerControls.setVisibility(View.GONE);
+        btnToggle.setVisibility(View.GONE);
+        loadingGif.setVisibility(View.VISIBLE);
+
+        handler.postDelayed(() -> {
+            centerControls.setVisibility(View.VISIBLE);
+            btnToggle.setVisibility(View.VISIBLE);
+            btnToggle.setText("START");
+            btnToggle.setBackground(ContextCompat.getDrawable(this, R.drawable.start_button_bg));
+            loadingGif.setAlpha(0.25f);
+        }, delayMs);
     }
 
     private void startSystem() {
         isRunning = true;
+
         previewView.setVisibility(View.VISIBLE);
         overlayView.setVisibility(View.VISIBLE);
         loadingGif.setVisibility(View.GONE);
+        centerControls.setVisibility(View.GONE);
+
+        btnStop.setVisibility(View.VISIBLE);
 
         btnToggle.setText("STOP");
-        btnToggle.setTextColor(0xFFFFCDD2);
         btnToggle.setBackground(ContextCompat.getDrawable(this, R.drawable.stop_button_bg));
 
         handleStartNavigation();
@@ -150,59 +177,45 @@ public class MainActivity extends AppCompatActivity {
 
     private void stopSystem() {
         isRunning = false;
+
         previewView.setVisibility(View.GONE);
         overlayView.setVisibility(View.GONE);
+        btnStop.setVisibility(View.GONE);
+
         handleStopNavigation();
         showStartAfterDelay(1000);
     }
 
-    private void showStartAfterDelay(int delayMs) {
-        btnToggle.setVisibility(View.GONE);
-        loadingGif.setVisibility(View.VISIBLE);
-
-        handler.postDelayed(() -> {
-            btnToggle.setVisibility(View.VISIBLE);
-            btnToggle.setText("START");
-            btnToggle.setTextColor(0xFFB3E5FC);
-            btnToggle.setBackground(ContextCompat.getDrawable(this, R.drawable.start_button_bg));
-        }, delayMs);
-    }
-
     private void handleDescribeEnvironment() {
         if (environmentNarrator == null) {
-            speechOutput.speak("AI is not ready yet.");
+            speechOutput.speak("AI not ready.");
             return;
         }
 
-        speechOutput.speak("Analyzing the room. Please hold still.");
-        final Bitmap fullFrame = previewView.getBitmap();
-
-        if (fullFrame == null) return;
+        speechOutput.speak("Analyzing surroundings.");
+        final Bitmap frame = previewView.getBitmap();
+        if (frame == null) return;
 
         Executors.newSingleThreadExecutor().execute(() -> {
-            try {
-                Bitmap tinyBitmap = Bitmap.createScaledBitmap(fullFrame, 640, 480, true);
-                environmentNarrator.describeScene(tinyBitmap, new EnvironmentNarrator.DescriptionCallback() {
-                    @Override
-                    public void onDescriptionReady(String description) {
-                        runOnUiThread(() -> speechOutput.speak(description));
-                    }
-                    @Override
-                    public void onError(String error) {
-                        runOnUiThread(() -> speechOutput.speak("Analysis failed."));
-                    }
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "AI Error: " + e.getMessage());
-            }
+            Bitmap small = Bitmap.createScaledBitmap(frame, 640, 480, true);
+            environmentNarrator.describeScene(small, new EnvironmentNarrator.DescriptionCallback() {
+                @Override
+                public void onDescriptionReady(String description) {
+                    runOnUiThread(() -> speechOutput.speak(description));
+                }
+                @Override
+                public void onError(String error) {
+                    runOnUiThread(() -> speechOutput.speak("Analysis failed."));
+                }
+            });
         });
     }
 
     private void handleStartNavigation() {
         speechOutput.speak("Navigation started");
-        if (cameraManager != null) {
-            cameraManager.startCamera(new FrameAnalyzer(detector, speechOutput, overlayView, feedbackController));
-        }
+        cameraManager.startCamera(
+                new FrameAnalyzer(detector, speechOutput, overlayView, feedbackController)
+        );
     }
 
     private void handleStopNavigation() {
